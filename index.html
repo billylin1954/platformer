@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+   <meta charset="UTF-8">
+   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+   <title>Platform Game</title>
+   <style>
+      #board {
+         top: 0;
+         left: 0;
+         right: 0;
+      }
+
+      #respawn {
+         visibility: hidden;
+      }
+   </style>
+</head>
+<body>
+   <button id="respawn" onclick="restart()">Respawn</button>
+   <canvas id="board" width="100" height="100"></canvas>
+   <script>
+      let player_gameframes = 0;
+      let isground;
+      let coyotetime = 0;
+      let damageframes = 20;
+      let lives = 5;
+      let cooldown = 3;
+      let isshoot = 0;
+      let backroundX = 0;
+      let framecount = 0;
+      let checkpoint = 0;
+      let past_checkpoint = 0;
+      let counter = 0;
+      let isright = 1;
+      let currentanimation = animatelist.idle;
+      let currentanimation_shooter = shooter_animate.stall;
+      let currentanimation_goomba = goomba_animate.idle_left;
+      let platform_Yvelocity = 0;
+      let frameX;
+      let frameY;
+      let sheetX = 0;
+      let camera = {
+         x: 0,
+         y: 0,
+         lerpSpeed: 0.1,
+         clamp: function (value, min, max) {
+            return Math.max(min, Math.min(value, max));
+         },
+         lerp: function (start, end, t) {
+            return start + (end - start) * t;
+         },
+         update: function (targetX, targetY) {
+            let targetCameraX = targetX - viewportWidth / 2;
+            let targetCameraY = targetY - viewportHeight / 2;
+            targetCameraX = this.clamp(targetCameraX, 0, worldWidth - viewportWidth);
+            targetCameraY = this.clamp(targetCameraY, 0, worldHeight - viewportHeight);
+            this.x = this.lerp(this.x, targetCameraX, this.lerpSpeed);
+            this.y = this.lerp(this.y, targetCameraY, this.lerpSpeed);
+         }
+      };
+      const c = document.getElementById("board");
+      const ctx = c.getContext("2d");
+      ctx.canvas.height = 800;
+      const viewportWidth = ctx.canvas.width;
+      const viewportHeight = ctx.canvas.height;
+      const worldWidth = 2000;
+      const worldHeight = 9000;
+
+      let hearts = { y: 100, x: window.outerWidth / 2, width: 100, height: 100 };
+      let lasty, levelOffset = 0;
+      let shooter_enemy = { health: 90, width: 100, height: 200 };
+      let shooter_placement = [4500, 500, 6200, -10];
+      let shooter_bullet = [];
+      for (let i = 0; i < shooter_placement.length; i += 2) {
+         shooter_bullet.push(i);
+         shooter_bullet.push(i + 1);
+      }
+      let savepoint = { x: 0, y: 0 };
+      let savepoint_placement = [4700, 1080, 90, 100];
+      let bullet = { x: 0, y: 0 };
+      let bulletlist = [];
+      let bulletdir = [];
+      let frames, frameX_player, frameY_player, sheetX_player, sheetY_player;
+      let isclimb = 0, xspeed;
+      let desertX = 0;
+      let desert2X = window.outerWidth;
+      let goomba = { x: 1000, y: 630, width: 60, height: 200, Yspeed: 2, health: [] };
+      let coin = { X: 1250, Y: 300, width: 60, height: 70 };
+      let goomba_coords = [1000, 230, 5000, 230];
+      for (let i = 0; i < goomba_coords.length; i++) {
+         goomba.health.push(9);
+      }
+      let levels = [1000, 780, 500, 500, 500, 780, 500, 500, 3000, 980, 600, 100, 3500, 700, 500, 500, 5500, 780, 500, 500];
+      let spike = [1500, 980, 200, 200, 1900, 980, 200, 200];
+      let floor = (window.innerHeight / 2 - 100);
+      let platformY = 0, platformX = 0, platformwidth = 0, platformheight = 0, gameframes = 0;
+      let player = { width: 100, height: 100, x: 200, y: 800, screenY: 0, screenX: 0 };
+      let xvelocity = 0;
+      let gravityspeed = 0;
+      let gravity = 2;
+      let goomba_animate = {
+         hurt: { width: 240, height: 280, starW: 155, frames: 0, y: 1 },
+         hit: { width: 270, height: 280, starW: 400, frames: 0, y: 1 },
+         idle: { width: 200, height: 325, starW: 650, frames: 0, y: 1 },
+         stall: { width: 200, height: 400, starW: 1, frames: 0, y: 1 },
+         idle_left: { width: 240, height: 320, starW: 830, frames: 0, y: 1 },
+         hurt_left: { width: 260, height: 280, starW: 1300, frames: 0, y: 1 },
+         hit_left: { width: 270, height: 280, starW: 1050, frames: 0, y: 1 },
+         stall_left: { width: 200, height: 300, starW: 1300, frames: 0, y: 1 }
+      };
+      let shooter_animate = {
+         stall: { width: 170, height: 350, starW: 1, frames: 0, y: 1 }
+      };
+      let animatelist = {
+         idle: { width: 86, height: 100, startW: 0, frames: 0 },
+         runleft: { width: 100, height: 96, startW: 170 + 270, frames: 2 },
+         runright: { width: 100, height: 96, startW: 170 + 106, frames: 2 },
+         shootright: { width: 140, height: 100, startW: 600, frames: 0 },
+         shootleft: { width: 140, height: 100, startW: 660, frames: 0 },
+         slashright: { width: 120, height: 90, startW: 40, frames: 2 },
+         slashleft: { width: 120, height: 90, startW: 90, frames: 2 }
+      };
+      let shooterImg = new Image();
+      shooterImg.src = "shooter.png";
+      let playerImg = new Image();
+      playerImg.src = "player.png";
+      let goombaImg = new Image();
+      goombaImg.src = "goomba_sheet.png";
+      let spikeImg = new Image();
+      spikeImg.src = "spike.png";
+      ctx.canvas.height = 800;
+      let viewportWidth = ctx.canvas.width;
+      let viewportHeight = ctx.canvas.height;
+      let worldWidth = 2000;
+      let worldHeight = 9000;
+      let shooter_gravity = 0;
+
+      function restart() {
+         isalive = 1;
+         camera.y = savepoint.y;
+         camera.x = savepoint.x;
+         lives = 5;
+      }
+
+      function detectCollision(a, b) {
+         return a.x < b.x + b.width &&
+            a.x + a.width > b.x &&
+            a.y < b.y + b.height &&
+            a.y + a.height > b.y;
+      }
+
+      function obstacle(arr, platformwidth, platformheight, platformX, platformY, levelOffset, img) {
+         ctx.fillStyle = "blue";
+         for (let a = 0; a < arr.length; a += 4) {
+            platformX = arr[a] + levelOffset;
+            platformY = arr[a + 1] - camera.y;
+            platformwidth = arr[a + 2];
+            platformheight = arr[a + 3];
+            ctx.drawImage(img, platformX, platformY, platformwidth, platformheight);
+         }
+      }
+
+      function obstacle_collision(arr, platformwidth, platformheight, platformX, platformY, levelOffset, ishurt) {
+         for (let a = 0; a < arr.length; a += 4) {
+            platformX = arr[a] + levelOffset;
+            platformY = arr[a + 1] - camera.y;
+            platformwidth = arr[a + 2];
+            platformheight = arr[a + 3];
+            if (detectCollision(player, { x: platformX, y: platformY, width: platformwidth, height: platformheight })) {
+               if (ishurt) {
+                  lives--;
+               }
+               else {
+                  isground = 1;
+                  player.y = platformY - player.height;
+                  gravityspeed = 0;
+               }
+            }
+         }
+      }
+
+      function gravityfunction(player, isground, gravityspeed) {
+         gravityspeed += gravity;
+         player.y += gravityspeed;
+      }
+
+      function healthbar() {
+         for (let i = 0; i < lives; i++) {
+            ctx.fillRect(hearts.x + 120 * i, hearts.y, hearts.width, hearts.height);
+         }
+      }
+
+      function detect_shoot(arr) {
+         for (let i = 0; i < arr.length; i += 2) {
+            if (player.x > arr[i] - 100 && player.x < arr[i] + 100) {
+               shooter_gravity = 4;
+               arr[i] = -100;
+               arr[i + 1] = -100;
+               return true;
+            }
+         }
+         return false;
+      }
+
+      function goomba_animation(anim) {
+         frames = anim.frames;
+         frameX = anim.starW + frames * anim.width;
+         ctx.drawImage(goombaImg, frameX, anim.y, anim.width, anim.height, goomba.x, goomba.y, goomba.width, goomba.height);
+      }
+
+      function shooter_animation(anim) {
+         frames = anim.frames;
+         frameX = anim.starW + frames * anim.width;
+         ctx.drawImage(shooterImg, frameX, anim.y, anim.width, anim.height, shooter_enemy.x, shooter_enemy.y, shooter_enemy.width, shooter_enemy.height);
+      }
+
+      function playeranimation(anim) {
+         frameX_player = anim.startW + sheetX_player * anim.width;
+         frameY_player = 0;
+         ctx.drawImage(playerImg, frameX_player, frameY_player, anim.width, anim.height, player.x - camera.x, player.y - camera.y, anim.width, anim.height);
+      }
+
+      function loop() {
+         ctx.clearRect(0, 0, viewportWidth, viewportHeight);
+         player_gameframes++;
+         gameframes++;
+         ctx.drawImage(shooterImg, shooter_enemy.x, shooter_enemy.y - camera.y, shooter_enemy.width, shooter_enemy.height);
+         obstacle(levels, platformwidth, platformheight, platformX, platformY, levelOffset, spikeImg);
+         obstacle_collision(levels, platformwidth, platformheight, platformX, platformY, levelOffset, 0);
+         healthbar();
+         if (!detect_shoot(shooter_bullet)) {
+            goomba_animation(currentanimation_goomba);
+         }
+         shooter_animation(currentanimation_shooter);
+         playeranimation(currentanimation);
+         gravityfunction(player, isground, gravityspeed);
+         camera.update(player.x, player.y);
+         if (player.y > ctx.canvas.height) {
+            document.getElementById("respawn").style.visibility = "visible";
+         }
+         requestAnimationFrame(loop);
+      }
+      loop();
+   </script>
+</body>
+</html>
